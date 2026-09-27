@@ -1,0 +1,36 @@
+# Basado en github/gitignore Terraform.gitignore
+
+# Directorio local de providers/módulos descargados por `terraform init`
+**/.terraform/*
+
+# State local y backups: contienen IDs y posibles secretos en texto plano
+*.tfstate
+*.tfstate.*
+
+# Logs de crash
+crash.log
+crash.*.log
+
+# Archivos de variables con valores sensibles.
+# NOTA: terraform.tfvars SÍ se versiona en este proyecto (valores de ejemplo,
+# sin secretos). Cualquier override local o con secretos va en *.auto.tfvars
+# o *.secret.tfvars, que quedan ignorados.
+*.auto.tfvars
+*.auto.tfvars.json
+*.secret.tfvars
+
+# Overrides locales
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Planes guardados (pueden contener valores sensibles)
+*.tfplan
+tfplan
+
+# CLI config
+.terraformrc
+terraform.rc
+
+# NO ignorar .terraform.lock.hcl: fija versiones de providers para todo el equipo
