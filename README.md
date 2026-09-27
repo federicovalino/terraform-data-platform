@@ -1,95 +1,95 @@
 # Terraform Data Platform — Scaffolding
 
-Esqueleto de un proyecto Terraform para una plataforma de datos en AWS que eventualmente incluirá **Kinesis** (ingesta), **Apache Flink** (procesamiento en ventanas) y **Redshift** (analítica). Hoy despliega solo un bucket S3 "raw" como recurso de ejemplo.
+Base scaffolding for a Terraform project that provisions an AWS data platform, which will eventually include **Kinesis** (ingestion), **Apache Flink** (windowed stream processing) and **Redshift** (analytics). For now it deploys a single S3 "raw" bucket as an example resource.
 
-## Estructura
+## Project structure
 
 ```
 .
-├── provider.tf        # Versión de Terraform (>= 1.5), provider AWS (~> 6.0), default_tags, backend (comentado)
-├── variables.tf       # Inputs tipados, con descripción y validaciones
-├── locals.tf          # Convención de nombres y tags comunes
-├── main.tf            # Recursos: bucket S3 raw + placeholders de Kinesis y Flink
-├── outputs.tf         # Valores expuestos (nombre/ARN del bucket, prefijo)
-├── terraform.tfvars   # Valores de ejemplo para dev (sin secretos)
-├── .gitignore         # Excluye .terraform/, *.tfstate, planes y overrides
+├── provider.tf        # Terraform version (>= 1.5), AWS provider (~> 6.0), default_tags, backend (commented out)
+├── variables.tf       # Typed inputs with descriptions and validation rules
+├── locals.tf          # Naming convention and common tags
+├── main.tf            # Resources: raw S3 bucket + Kinesis and Flink placeholders
+├── outputs.tf         # Exposed values (bucket name/ARN, name prefix)
+├── terraform.tfvars   # Example values for dev (no secrets)
+├── .gitignore         # Excludes .terraform/, *.tfstate, saved plans and overrides
 └── README.md
 ```
 
-## Requisitos
+## Requirements
 
 - Terraform >= 1.5
-- Credenciales de AWS configuradas (`aws configure`, `AWS_PROFILE` o SSO). **Nunca** en el código ni en `.tfvars`.
+- AWS credentials configured (`aws configure`, `AWS_PROFILE` or SSO). **Never** in the code or in `.tfvars` files.
 
-## Cómo inicializar y usar
+## Getting started
 
 ```bash
-git clone <url-del-repo> && cd terraform-data-platform
+git clone <repo-url> && cd terraform-data-platform
 
-terraform init        # descarga el provider de AWS y genera .terraform.lock.hcl
-terraform fmt -check  # verifica formato
-terraform validate    # valida sintaxis y tipos
+terraform init        # downloads the AWS provider and creates .terraform.lock.hcl
+terraform fmt -check  # checks formatting
+terraform validate    # validates syntax, types and references
 
-terraform plan -out=tfplan   # revisar SIEMPRE el diff (+ ~ -) antes de aplicar
+terraform plan -out=tfplan   # ALWAYS review the diff (+ ~ -) before applying
 terraform apply tfplan
 
-terraform destroy     # solo para entornos efímeros (dev / pruebas)
+terraform destroy     # only for ephemeral environments (dev / testing)
 ```
 
-Para otro entorno, se pasa un archivo de variables distinto:
+To target a different environment, pass a different variables file:
 
 ```bash
 terraform plan -var-file=prod.tfvars
 ```
 
-> El `.terraform.lock.hcl` **sí** se commitea: fija las versiones exactas de los providers para todo el equipo.
+> `.terraform.lock.hcl` **should** be committed: it pins the exact provider versions for the whole team.
 
-## Convención de nombres
+## Naming convention
 
-Todos los recursos siguen el patrón:
+Every resource follows this pattern:
 
 ```
-<project>-<environment>-<componente>[-<sufijo>]
+<project>-<environment>-<component>[-<suffix>]
 ```
 
-| Recurso | Ejemplo (dev) |
+| Resource | Example (dev) |
 |---|---|
-| Bucket S3 raw | `segmentacion-dev-raw-123456789012` |
+| Raw S3 bucket | `segmentacion-dev-raw-123456789012` |
 | Kinesis stream | `segmentacion-dev-ingesta-stream` |
-| App de Flink | `segmentacion-dev-segmentacion-flink` |
+| Flink application | `segmentacion-dev-segmentacion-flink` |
 
-- Solo minúsculas, números y guiones (compatible con las reglas de S3 y del resto de servicios).
-- El prefijo `<project>-<environment>` se calcula una sola vez en `locals.tf` (`local.name_prefix`), así nadie lo arma a mano.
-- Los buckets S3 llevan el **account ID** como sufijo porque sus nombres son globales en AWS; se obtiene con `data.aws_caller_identity`, sin hardcodear.
-- `project_name` y `environment` tienen validaciones: un typo (`prd`, `Produccion`) falla en `plan`, no en producción.
+- Lowercase letters, numbers and hyphens only (compatible with S3 naming rules and every other service).
+- The `<project>-<environment>` prefix is computed once in `locals.tf` (`local.name_prefix`), so nobody builds it by hand.
+- S3 buckets get the **AWS account ID** as a suffix because bucket names are globally unique; it is read through `data.aws_caller_identity`, never hardcoded.
+- `project_name` and `environment` have validation rules: a typo (`prd`, `Production`) fails at `plan` time, not in production.
 
-### Tags obligatorios
+### Mandatory tags
 
-Aplicados a **todos** los recursos vía `default_tags` del provider: `Project`, `Environment`, `Owner`, `CostCenter`, `ManagedBy = terraform`. En streaming los costos escalan rápido; esto permite imputarlos por equipo y entorno.
+Applied to **every** resource through the provider's `default_tags`: `Project`, `Environment`, `Owner`, `CostCenter`, `ManagedBy = terraform`. Streaming costs can grow fast; these tags make it possible to allocate spend by team and environment.
 
-## Por qué varios archivos y no un único `main.tf`
+## Why multiple files instead of a single `main.tf`
 
-Terraform lee todos los `.tf` del directorio como un solo módulo, así que la división no cambia el comportamiento: es una decisión **de mantenimiento**.
+Terraform loads every `.tf` file in the directory as a single module, so splitting them does not change behavior. It is a **maintainability** decision:
 
-1. **Separación de responsabilidades.** Cada archivo responde una sola pregunta: *¿con qué se conecta?* (`provider.tf`), *¿qué se puede configurar?* (`variables.tf`), *¿qué se crea?* (`main.tf`), *¿qué expone?* (`outputs.tf`).
-2. **Interfaz clara del módulo.** `variables.tf` + `outputs.tf` son el "contrato": quien consume el proyecto (otro equipo, Airflow, un pipeline de CI) no necesita leer los recursos.
-3. **Código igual en todos los entornos.** Los valores viven en `.tfvars`; dev, staging y prod despliegan exactamente el mismo código con distinto tamaño (ej. 1 vs 50 shards). Esto ataca directamente la inconsistencia y el drift del Click-Ops.
-4. **Code reviews más simples.** Un PR que solo cambia `provider.tf` (subir versión del provider) es fácil de aislar y revisar, y genera menos conflictos de merge.
-5. **Convención estándar.** Es la estructura que recomienda HashiCorp; cualquier ingeniero nuevo sabe dónde buscar.
-6. **`locals.tf` aparte** centraliza nombres y tags, evitando que cada recurso los repita (y los escriba distinto).
+1. **Separation of concerns.** Each file answers one question: *what do we connect to?* (`provider.tf`), *what can be configured?* (`variables.tf`), *what gets created?* (`main.tf`), *what is exposed?* (`outputs.tf`).
+2. **A clear module interface.** `variables.tf` + `outputs.tf` act as the project's contract: consumers (another team, Airflow, a CI pipeline) don't need to read the resources.
+3. **Same code across environments.** Values live in `.tfvars` files; dev, staging and prod deploy exactly the same code with different sizing (e.g. 1 vs 50 shards). This directly addresses the inconsistency and drift caused by Click-Ops.
+4. **Simpler code reviews.** A PR that only touches `provider.tf` (e.g. a provider version bump) is easy to isolate and review, and produces fewer merge conflicts.
+5. **Standard convention.** This is the layout recommended by HashiCorp; any new engineer knows where to look.
+6. **A separate `locals.tf`** centralizes names and tags, so resources don't repeat them (or spell them differently).
 
-A medida que crezca, el siguiente paso es separar en **estados pequeños** por dominio (red, IAM, Kinesis, Flink, Redshift) o en módulos reutilizables, para reducir el *blast radius*.
+As the platform grows, the next step is splitting it into **smaller states** per domain (network, IAM, Kinesis, Flink, Redshift) or into reusable modules, to reduce the *blast radius*.
 
-## Buenas prácticas aplicadas
+## Best practices applied
 
-- `*.tfstate` y `.terraform/` excluidos de git (el state puede contener secretos en texto plano).
-- Referencias entre recursos (`aws_s3_bucket.raw.id`) en vez de ARNs hardcodeados → Terraform infiere dependencias.
-- Bucket con versionado, cifrado y bloqueo de acceso público.
-- `lifecycle { prevent_destroy }` preparado en el bucket: activarlo en prod.
+- `*.tfstate` and `.terraform/` are excluded from git (state can contain secrets in plain text).
+- References between resources (`aws_s3_bucket.raw.id`) instead of hardcoded ARNs, so Terraform infers dependencies.
+- Bucket with versioning, encryption and public access blocked.
+- `lifecycle { prevent_destroy }` ready on the bucket: enable it in prod.
 
-## Próximos pasos
+## Next steps
 
-- [ ] Backend remoto en S3 con locking (bloque ya preparado en `provider.tf`).
-- [ ] Descomentar el stream de Kinesis en `main.tf`.
-- [ ] Rol IAM + aplicación de Managed Service for Apache Flink.
-- [ ] `staging.tfvars` y `prod.tfvars` (región distinta por cumplimiento).
+- [ ] Remote backend on S3 with state locking (block already prepared in `provider.tf`).
+- [ ] Uncomment the Kinesis stream in `main.tf`.
+- [ ] IAM role + Managed Service for Apache Flink application.
+- [ ] `staging.tfvars` and `prod.tfvars` (different region for compliance).
